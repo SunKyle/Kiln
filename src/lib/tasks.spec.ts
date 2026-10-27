@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { activeTasks, sortByPriority, dueOn } from './tasks'
+import { activeTasks, sortByPriority, dueOn, overdueTasks, searchTasks } from './tasks'
 import type { Task } from '@/types'
 
 const t = (o: Partial<Task> = {}): Task => ({
@@ -23,5 +23,21 @@ describe('task utils', () => {
   it('finds tasks due on a day', () => {
     const list = [t({ due: '2026-10-27' }), t({ due: '2026-10-28' })]
     expect(dueOn(list, '2026-10-27')).toHaveLength(1)
+  })
+  it('marks only undone dated tasks as overdue', () => {
+    const list = [
+      t({ due: '2026-10-26' }), // past due -> counts
+      t({ due: '2026-10-27' }), // today -> does not count
+      t({ due: '2026-10-26', done: true }), // finished -> does not count
+      t(), // no due date -> never counts
+    ]
+    expect(overdueTasks(list, '2026-10-27')).toHaveLength(1)
+  })
+  it('searches titles case-insensitively, blank query is a no-op', () => {
+    const list = [t({ title: 'Fix API timeout' }), t({ title: '写周报' })]
+    expect(searchTasks(list, 'api')).toHaveLength(1)
+    expect(searchTasks(list, '周报')).toHaveLength(1)
+    expect(searchTasks(list, '  ')).toHaveLength(2)
+    expect(searchTasks(list, '')).toBe(list)
   })
 })

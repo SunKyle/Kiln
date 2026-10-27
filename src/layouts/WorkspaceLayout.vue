@@ -12,8 +12,7 @@ const route = useRoute()
 const title = computed(() => (route.meta.title as string) || '工作台')
 
 const now = new Date()
-const today = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }).format(now)
-const greet = now.getHours() < 12 ? '早上好' : now.getHours() < 18 ? '下午好' : '晚上好'
+const today = new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }).format(now)
 
 const { tasks } = useTasks()
 const { notes, refresh } = useNotes()
@@ -44,7 +43,7 @@ async function onImportFile(e: Event) {
 </script>
 
 <template>
-  <div class="shell">
+  <div class="shell" :class="{ 'shell-fit': route.name === 'dashboard' }">
     <aside class="rail">
       <RouterLink class="logo" to="/" title="Kiln">K</RouterLink>
       <nav class="nav">
@@ -67,12 +66,10 @@ async function onImportFile(e: Event) {
 
     <main class="main">
       <div class="topbar">
-        <div>
-          <div class="hello">{{ greet }}，数据只存在这台设备</div>
-          <h1 class="title">{{ title }}</h1>
+        <div class="tb-head">
+          <h1 class="title">{{ title }}<span class="when">{{ today }}</span></h1>
         </div>
-        <div class="right">
-          <span class="date">{{ today }}</span>
+        <div v-if="route.name !== 'dashboard'" class="tb-actions">
           <button class="btn" @click="doExport">
             <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>
             导出
