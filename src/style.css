@@ -348,18 +348,20 @@ a{color:inherit}
 .cal .more-p{font-size:var(--fs-meta);font-weight:600;color:var(--text-3);padding-left:2px}
 /* the month bar: one element per day, so a busy month is 42 bars instead of 126 specks. Widths
    arrive from barPlan() inline; the seam is the only reason two adjacent hues stay two hues.
-   The box keeps the dot row's old 7px slot and centres a 4px mark in it, so the 52px row never moved */
+   The box keeps the dot row's old 7px slot and centres a 4px mark in it, so the 52px row never
+   moved. Never name the segment .seg — that class is the 周/月 switch, and under border-box its
+   padding+border floors the box at 10px no matter what height is declared here. */
 .cal .bar{display:flex;align-items:center;gap:1.5px;height:7px;flex-shrink:0}
-.cal .bar .seg{display:block;height:4px;border-radius:2px;flex-shrink:0}
+.cal .bar .slice{display:block;height:4px;border-radius:2px;flex-shrink:0}
 .cal .bar .s-high{background:var(--p-high)}
 .cal .bar .s-med{background:var(--p-med)}
 .cal .bar .s-low{background:var(--p-low)}
 .cal .bar .more{width:4px;height:4px;border-radius:50%;background:var(--line-control);flex-shrink:0}
 /* overdue takes the whole bar over: once hue is speaking for the state the priority mix stops
-   mattering. One segment fills the width the day earned — butting two rounded rects together still
+   mattering. One slice fills the width the day earned — butting two rounded rects together still
    bites a notch out of the middle, and two red dashes read as an equals sign */
-.cal .cell.late .bar .seg{flex:1;background:var(--danger)}
-.cal .cell.late .bar .seg:not(:first-child),.cal .cell.late .bar .more{display:none}
+.cal .cell.late .bar .slice{flex:1;background:var(--danger)}
+.cal .cell.late .bar .slice:not(:first-child),.cal .cell.late .bar .more{display:none}
 /* week density still names its tasks, so the dot is a margin marker on the pill, not the message */
 .cal .d{width:7px;height:7px;border-radius:50%;flex-shrink:0;display:block}
 .cal .d-high{background:var(--p-high)}

@@ -20,7 +20,7 @@ import {
 } from '@/lib/calendar'
 import type { Priority, Task } from '@/types'
 
-const { tasks, add, toggle, remove } = useTasks()
+const { tasks, add, update, toggle, remove } = useTasks()
 const route = useRoute()
 const router = useRouter()
 
@@ -28,6 +28,8 @@ const now = new Date()
 const today = dayKey(now.getTime())
 
 const PRIO: Record<Priority, string> = { high: '高', med: '中', low: '低' }
+/** The picker's option order, and the order the calendar bar prints — high first, both places. */
+const PRIO_ORDER: Priority[] = ['high', 'med', 'low']
 const WD = ['一', '二', '三', '四', '五', '六', '日']
 /** Week density prints at most this many titles in a cell; the rest collapse into +N. The month
  * bar has its own cap, which lives with its geometry in lib/calendar. */
@@ -137,6 +139,45 @@ function submit() {
  * does not exist any more (useTasks enforces the same rule at the write path). */
 function firmDue() {
   if (!dueInput.value) dueInput.value = today
+}
+
+/* ===== editing the row you already wrote =====
+   One row at a time is open, and only the field you touch is rewritten — the list is where the
+   record lives, so there is no separate edit screen to travel to. */
+const listEl = ref<HTMLUListElement | null>(null)
+const editingId = ref<string | null>(null)
+const draftTitle = ref('')
+
+function startEdit(t: Task) {
+  editingId.value = t.id
+  draftTitle.value = t.title
+  // the field only exists after the branch swaps in, so focus waits for the next tick
+  nextTick(() => {
+    const input = listEl.value?.querySelector('input.tt')
+    if (!input) return
+    input.focus()
+    input.setSelectionRange(input.value.length, input.value.length) // amend the words, don't retype them
+  })
+}
+
+function cancelEdit() {
+  editingId.value = null
+  draftTitle.value = ''
+}
+
+/** Enter and blur both land here; closing the row first is what stops the second one writing twice. */
+function saveEdit() {
+  const id = editingId.value
+  if (!id) return
+  const title = draftTitle.value.trim()
+  editingId.value = null
+  draftTitle.value = ''
+  if (title) update(id, { title }) // an empty commit is a refusal, not an eraser
+}
+
+function setPriority(t: Task, e: Event) {
+  const v = (e.target as HTMLSelectElement).value
+  if (v === 'high' || v === 'med' || v === 'low') update(t.id, { priority: v })
 }
 
 function openOn(key: string): Task[] {
@@ -332,7 +373,7 @@ function tagCls(t: Task) {
               <i
                 v-for="(p, i) in c.bar.segs"
                 :key="i"
-                class="seg"
+                class="slice"
                 :class="'s-' + p"
                 :style="{ width: c.bar.segWidth + 'px' }"
               />
@@ -428,8 +469,13 @@ function tagCls(t: Task) {
           </div>
         </section>
 
-        <ul v-if="list.length" class="f-list">
-          <li v-for="t in list" :key="t.id" class="ti" :class="{ done: t.done, late: isLate(t) }">
+        <ul v-if="list.length" ref="listEl" class="f-list">
+          <li
+            v-for="t in list"
+            :key="t.id"
+            class="ti"
+            :class="{ done: t.done, late: isLate(t), editing: editingId === t.id }"
+          >
             <input
               type="checkbox"
               class="box"
@@ -437,10 +483,35 @@ function tagCls(t: Task) {
               :aria-label="`完成 ${t.title}`"
               @change="toggle(t.id)"
             />
-            <span class="tt">{{ t.title }}</span>
+            <!-- the words are the handle: click them, rewrite them, Enter or a click away files it -->
+            <input
+              v-if="editingId === t.id"
+              v-model="draftTitle"
+              class="tt"
+              :aria-label="`修改「${t.title}」`"
+              @keydown.esc="cancelEdit"
+              @keydown.enter="saveEdit"
+              @blur="saveEdit"
+            />
+            <button
+              v-else
+              class="tt"
+              type="button"
+              :title="`点击修改：${t.title}`"
+              @click="startEdit(t)"
+            >{{ t.title }}</button>
             <span class="tail">
               <span v-if="scope !== 'day' || t.due !== sel" class="tag" :class="tagCls(t)">{{ whenLabel(t) }}</span>
-              <span class="pri">{{ PRIO[t.priority] }}</span>
+              <!-- the badge is the picker: choose, and it is filed -->
+              <select
+                class="pri"
+                :value="t.priority"
+                :aria-label="`修改优先级：${t.title}`"
+                title="修改优先级"
+                @change="setPriority(t, $event)"
+              >
+                <option v-for="p in PRIO_ORDER" :key="p" :value="p">{{ PRIO[p] }}</option>
+              </select>
               <button class="del" :aria-label="`删除 ${t.title}`" title="删除" @click="remove(t.id)">×</button>
             </span>
           </li>

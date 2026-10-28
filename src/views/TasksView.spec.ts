@@ -74,9 +74,9 @@ describe('TasksView calendar', () => {
     ])
     expect(w.findAll('.cell')).toHaveLength(42)
     expect(w.find('.cells').classes()).toContain('m')
-    expect(cell(w, shift(0)).findAll('.seg')).toHaveLength(2)
-    expect(cell(w, shift(-6)).findAll('.seg')).toHaveLength(1)
-    expect(cell(w, shift(1)).findAll('.seg')).toHaveLength(0) // nothing dated there
+    expect(cell(w, shift(0)).findAll('.slice')).toHaveLength(2)
+    expect(cell(w, shift(-6)).findAll('.slice')).toHaveLength(1)
+    expect(cell(w, shift(1)).findAll('.slice')).toHaveLength(0) // nothing dated there
     expect(w.find('.cell.today .num').text()).toBe(num(shift(0)))
     // the cursor is the disc on the number, and it never shares a shape with the bar below it
     expect(w.findAll('.seline')).toHaveLength(0)
@@ -85,7 +85,7 @@ describe('TasksView calendar', () => {
 
   it('a finished task keeps its line in the day but never its mark', async () => {
     const w = await open([task('做完的不算', { due: shift(1), done: true })])
-    expect(cell(w, shift(1)).findAll('.seg')).toHaveLength(0)
+    expect(cell(w, shift(1)).findAll('.slice')).toHaveLength(0)
     await toWeek(w)
     const pill = cell(w, shift(1)).find('.pill')
     expect(pill.classes()).toContain('done')
@@ -101,10 +101,10 @@ describe('TasksView calendar', () => {
       task('e', { due: shift(0), priority: 'low' }),
     ])
     const bar = cell(w, shift(0)).find('.bar')
-    expect(bar.findAll('.seg')).toHaveLength(4) // four is the ceiling
+    expect(bar.findAll('.slice')).toHaveLength(4) // four is the ceiling
     expect(bar.findAll('.more')).toHaveLength(1) // the rest is one dot, not a pile of them
     expect(bar.attributes('style')).toContain('width: 38px') // the width is the plan's, not the CSS's
-    expect(bar.findAll('.seg')[0].classes()).toContain('s-high') // and it prints high → low
+    expect(bar.findAll('.slice')[0].classes()).toContain('s-high') // and it prints high → low
   })
 
   it('the week density trades marks for titles, and caps them the same way', async () => {
@@ -127,7 +127,7 @@ describe('TasksView calendar', () => {
     const w = await open([task('迟了两天', { due: shift(-2), priority: 'high' })])
     const late = cell(w, shift(-2))
     expect(late.classes()).toContain('late')
-    expect(late.findAll('.seg')[0].classes()).toContain('s-high') // the mix survives; the hue goes to red
+    expect(late.findAll('.slice')[0].classes()).toContain('s-high') // the mix survives; the hue goes to red
     await late.trigger('click') // make it the day being read, so the week window still contains it
     await toWeek(w)
     const pill = cell(w, shift(-2)).find('.pill')
@@ -179,7 +179,7 @@ describe('TasksView calendar', () => {
     await nextTick()
     const added = stored().find((t) => t.title === '排到五天后')
     expect(added?.due).toBe(shift(5))
-    expect(cell(w, shift(5)).findAll('.seg')).toHaveLength(1)
+    expect(cell(w, shift(5)).findAll('.slice')).toHaveLength(1)
     expect(w.findAll('.f-list .tt').map((r) => r.text())).toContain('排到五天后')
     expect(w.find('.cmp-title').exists()).toBe(false) // compose mode closed itself
   })
@@ -219,9 +219,9 @@ describe('TasksView calendar', () => {
 
   it('lifts a mark off the calendar once the task is checked off', async () => {
     const w = await open([task('今天要关', { due: shift(0), priority: 'high' })])
-    expect(cell(w, shift(0)).findAll('.seg')).toHaveLength(1)
+    expect(cell(w, shift(0)).findAll('.slice')).toHaveLength(1)
     await w.find('.f-list .box').setValue(true)
-    expect(cell(w, shift(0)).findAll('.seg')).toHaveLength(0)
+    expect(cell(w, shift(0)).findAll('.slice')).toHaveLength(0)
     expect(w.find('.f-list .ti').classes()).toContain('done')
   })
 
@@ -247,7 +247,7 @@ describe('TasksView calendar', () => {
 
   it('nudges when nothing in the library carries a date at all', async () => {
     const w = await open([task('没头没尾', {}), task('也没日期', {})])
-    expect(w.findAll('.cells .seg')).toHaveLength(0)
+    expect(w.findAll('.cells .slice')).toHaveLength(0)
     expect(w.find('.nudge').text()).toContain('2 项任务还没写到期日')
     expect(w.find('.emptyhint').text()).toContain('这一天还空着')
     // an empty range reads 0% and says so, rather than "已完成 0 / 0"
