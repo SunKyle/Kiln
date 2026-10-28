@@ -441,12 +441,30 @@ a{color:inherit}
 .focus .tt{flex:1 1 auto;min-width:0;font-size:var(--fs-body);font-weight:500;color:var(--text);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .focus .ti.done .tt{color:var(--text-3);font-weight:400;text-decoration:line-through}
+/* a record is rewritten where it is read: the words are the handle, the badge is the picker. Both
+   keep their reading skin until the row wakes up — the patience the delete × already shows. */
+.focus button.tt{border:none;background:none;padding:0;text-align:left;cursor:text;font-family:inherit}
+.ti:hover .tt{text-decoration-line:underline;text-decoration-color:var(--line-control);text-underline-offset:3px}
+/* the open row grows a field, not a second card: the extra height comes back out of its padding */
+.focus .ti.editing{padding:8px 0}
+.focus .ti input.tt{height:var(--ctl-h);width:auto;padding:0 8px;margin-left:-6px;background:var(--white);
+  border:1px solid var(--focus);border-radius:var(--r);text-decoration-line:none}
+.focus .ti input.tt:focus{outline:none} /* the gold edge is the ring */
 .focus .ti .tail{margin-left:auto;display:flex;align-items:center;gap:12px;flex-shrink:0}
 /* metadata reads as metadata: plain ink, hue still carries the state */
 .tag{font-size:var(--fs-meta);font-weight:600;color:var(--text-2);font-variant-numeric:tabular-nums;white-space:nowrap}
 .tag.rd{color:var(--danger)}
 .tag.now{color:var(--link)}
-.pri{font-size:var(--fs-meta);font-weight:500;color:var(--text-3);white-space:nowrap}
+/* the badge is the picker. The border is always there (transparent), so the words sit exactly where
+   they did as plain ink and nothing shifts when the row wakes up. */
+.pri{appearance:none;-webkit-appearance:none;background:none;border:1px solid transparent;
+  border-radius:var(--r);padding:3px 6px;margin:0 -4px;font-family:inherit;font-size:var(--fs-meta);
+  font-weight:500;line-height:1.35;color:var(--text-3);white-space:nowrap;cursor:pointer;
+  transition:border-color .15s ease,color .15s ease}
+.ti:hover .pri,.ti:focus-within .pri{border-color:var(--line-control)}
+.pri:hover,.pri:focus{color:var(--text)}
+.pri:focus{border-color:var(--focus);outline:none}
+.pri option{color:var(--text);background:var(--white)}
 /* a destructive control does not need a place in every row's composition; it waits for the row */
 .del{width:18px;padding:0;border:none;background:none;cursor:pointer;font-family:inherit;
   font-size:14px;font-weight:600;line-height:1;color:var(--text-3);opacity:0;transition:opacity .15s ease,color .15s ease}

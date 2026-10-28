@@ -30,7 +30,7 @@ const today = dayKey(now.getTime())
 const PRIO: Record<Priority, string> = { high: '高', med: '中', low: '低' }
 /** The picker's option order, and the order the calendar bar prints — high first, both places. */
 const PRIO_ORDER: Priority[] = ['high', 'med', 'low']
-const WD = ['一', '二', '三', '四', '五', '六', '日']
+const WD = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
 /** Week density prints at most this many titles in a cell; the rest collapse into +N. The month
  * bar has its own cap, which lives with its geometry in lib/calendar. */
 const CAP = 3
@@ -153,7 +153,7 @@ function startEdit(t: Task) {
   draftTitle.value = t.title
   // the field only exists after the branch swaps in, so focus waits for the next tick
   nextTick(() => {
-    const input = listEl.value?.querySelector('input.tt')
+    const input = listEl.value?.querySelector<HTMLInputElement>('input.tt')
     if (!input) return
     input.focus()
     input.setSelectionRange(input.value.length, input.value.length) // amend the words, don't retype them

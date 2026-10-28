@@ -61,6 +61,14 @@ async function toWeek(w: VueWrapper) {
   await w.findAll('.seg-btn')[0].trigger('click')
   await nextTick()
 }
+/** Open row `n` for a rewrite: the words become the field, one tick for the swap. */
+async function editRow(w: VueWrapper, n = 0) {
+  await w.findAll('.f-list .ti')[n].find('button.tt').trigger('click')
+  await nextTick()
+}
+function titles(w: VueWrapper) {
+  return w.findAll('.f-list .tt').map((r) => r.text())
+}
 
 beforeEach(() => localStorage.clear())
 
@@ -273,5 +281,91 @@ describe('TasksView calendar', () => {
     // half the circumference wound back is half an arc — the two can never disagree
     const bar = w.find('.p-ring .bar')
     expect(Number(bar.attributes('stroke-dashoffset'))).toBeCloseTo(Math.PI * 25, 1)
+  })
+})
+
+describe('TasksView row editing', () => {
+  it('rewrites a title in place: the words are the handle, Enter files it', async () => {
+    const w = await open([task('旧的写法', { due: shift(0) })])
+    await editRow(w)
+    const input = w.find<HTMLInputElement>('.f-list input.tt')
+    expect(input.exists()).toBe(true) // the row became a field, on the spot
+    expect(input.element.value).toBe('旧的写法') // and it opens with what you already wrote
+    await input.setValue('新的写法')
+    await input.trigger('keydown.enter')
+    await nextTick()
+    expect(stored()[0].title).toBe('新的写法')
+    expect(w.find('.f-list input.tt').exists()).toBe(false) // back to being a row
+    expect(titles(w)).toEqual(['新的写法'])
+    expect(cell(w, shift(0)).findAll('.slice')).toHaveLength(1) // the day still carries it
+  })
+
+  it('a click away files the edit as surely as Enter does', async () => {
+    const w = await open([task('顺手补一句', { due: shift(0) })])
+    await editRow(w)
+    const input = w.find<HTMLInputElement>('.f-list input.tt')
+    await input.setValue('补完了')
+    await input.trigger('blur')
+    await nextTick()
+    expect(stored()[0].title).toBe('补完了')
+    expect(titles(w)).toEqual(['补完了'])
+  })
+
+  it('an empty commit is a refusal: the words stay, the row closes', async () => {
+    const w = await open([task('别擦掉我', { due: shift(0) })])
+    await editRow(w)
+    const input = w.find<HTMLInputElement>('.f-list input.tt')
+    await input.setValue('   ')
+    await input.trigger('keydown.enter')
+    await nextTick()
+    expect(stored()[0].title).toBe('别擦掉我')
+    expect(w.find('.f-list input.tt').exists()).toBe(false)
+  })
+
+  it('Esc puts the row back without writing anything', async () => {
+    const w = await open([task('原句', { due: shift(0) })])
+    await editRow(w)
+    const input = w.find<HTMLInputElement>('.f-list input.tt')
+    await input.setValue('改到一半')
+    await input.trigger('keydown.esc')
+    await nextTick()
+    expect(w.find('.f-list input.tt').exists()).toBe(false)
+    expect(stored()[0].title).toBe('原句')
+  })
+
+  it('opens one row at a time, and a draft stays inert until it is filed', async () => {
+    const w = await open([task('第一件', { due: shift(0) }), task('第二件', { due: shift(0) })])
+    await editRow(w, 0)
+    await w.find<HTMLInputElement>('.f-list input.tt').setValue('半路')
+    await editRow(w, 1) // in the browser row 0 files itself on the way out; the draft never writes on its own
+    await nextTick()
+    expect(w.findAll('.f-list input.tt')).toHaveLength(1)
+    expect(w.find<HTMLInputElement>('.f-list input.tt').element.value).toBe('第二件')
+    expect(stored().map((t) => t.title)).toEqual(['第一件', '第二件'])
+  })
+
+  it('choosing a priority on the badge rewrites the record, and the day re-sorts', async () => {
+    const w = await open([
+      task('低优先的活', { due: shift(0), priority: 'low' }),
+      task('中优先的活', { due: shift(0), priority: 'med' }),
+    ])
+    expect(titles(w)).toEqual(['中优先的活', '低优先的活'])
+    const picker = w.findAll('.f-list .ti')[1].find<HTMLSelectElement>('select.pri')
+    expect(picker.element.value).toBe('low') // the badge reads back what is stored
+    await picker.setValue('high')
+    await nextTick()
+    expect(stored().find((t) => t.title === '低优先的活')?.priority).toBe('high')
+    expect(titles(w)).toEqual(['低优先的活', '中优先的活']) // it takes the front of the day
+    expect(cell(w, shift(0)).findAll('.slice')[0].classes()).toContain('s-high') // and the bar says so
+  })
+
+  it('editing a finished task changes the words, not its state', async () => {
+    const w = await open([task('做完才发现写错', { due: shift(0), done: true })])
+    await editRow(w)
+    await w.find<HTMLInputElement>('.f-list input.tt').setValue('改好了')
+    await w.find<HTMLInputElement>('.f-list input.tt').trigger('keydown.enter')
+    await nextTick()
+    expect(stored()[0]).toMatchObject({ title: '改好了', done: true })
+    expect(w.find('.f-list .ti').classes()).toContain('done') // still struck through, still sunk
   })
 })

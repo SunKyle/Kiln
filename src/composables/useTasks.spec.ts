@@ -26,4 +26,33 @@ describe('useTasks', () => {
     await nextTick()
     expect(stored()).toHaveLength(0)
   })
+
+  it('an edit obeys the same rules as a new row', async () => {
+    const { add, update, tasks } = useTasks()
+    add('原话', 'med', '2030-01-02')
+    await nextTick()
+    const id = tasks.value[0].id
+
+    update(id, { title: '  改过的话  ' }) // trimmed on the way in, like a new row
+    await nextTick()
+    expect(stored()[0].title).toBe('改过的话')
+
+    update(id, { title: '   ' }) // an empty rewrite is refused, not an eraser
+    update(id, { priority: 'high' }) // and a field you leave out stays where it was
+    await nextTick()
+    expect(stored()[0]).toMatchObject({ title: '改过的话', priority: 'high', due: '2030-01-02' })
+
+    update(id, { due: 'no-such-day' }) // a due date still cannot land on nothing
+    await nextTick()
+    expect(stored()[0].due).toBe(today)
+  })
+
+  it('an edit aimed at a task that is not there changes nothing', async () => {
+    const { add, update } = useTasks()
+    add('活着', 'low')
+    await nextTick()
+    update('gone', { title: '改写别人', priority: 'high' })
+    await nextTick()
+    expect(stored().map((t) => `${t.title}/${t.priority}`)).toEqual(['活着/low'])
+  })
 })

@@ -20,6 +20,22 @@ export function useTasks() {
     if (!t) return
     tasks.value.push({ id: newId(), title: t, done: false, priority, due: dated(due), createdAt: Date.now() })
   }
+  /**
+   * The only way to change a task that already exists, and it obeys the same rules as creating
+   * one: a title never goes blank (an empty rewrite is refused, the old words stay) and a due
+   * date never goes missing. Fields you leave out are left alone.
+   */
+  function update(
+    id: string,
+    patch: { title?: string; priority?: Priority; due?: string },
+  ) {
+    const task = tasks.value.find((x) => x.id === id)
+    if (!task) return
+    const t = patch.title?.trim()
+    if (t) task.title = t
+    if (patch.priority) task.priority = patch.priority
+    if (patch.due !== undefined) task.due = dated(patch.due)
+  }
   function toggle(id: string) {
     const task = tasks.value.find((x) => x.id === id)
     if (task) task.done = !task.done
@@ -31,5 +47,5 @@ export function useTasks() {
   const active = computed(() => tasks.value.filter((t) => !t.done))
   const doneCount = computed(() => tasks.value.filter((t) => t.done).length)
 
-  return { tasks, add, toggle, remove, active, doneCount }
+  return { tasks, add, update, toggle, remove, active, doneCount }
 }
