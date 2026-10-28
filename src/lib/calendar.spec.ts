@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { Task } from '@/types'
+import type { Priority, Task } from '@/types'
 import {
   monthGrid,
   addMonth,
@@ -13,6 +13,12 @@ import {
   unscheduled,
   isOverdue,
   dayGap,
+  barPlan,
+  BAR_WIDTHS,
+  BAR_MIN_SEG,
+  BAR_GAP,
+  BAR_MORE,
+  BAR_MAX_SEG,
 } from './calendar'
 
 const task = (o: Partial<Task> = {}): Task => ({
@@ -207,5 +213,38 @@ describe('dayGap', () => {
     expect(dayGap('2026-10-27', '2026-10-27')).toBe(0)
     expect(dayGap('2026-10-25', '2026-10-27')).toBe(2)
     expect(dayGap('2026-11-01', '2026-10-27')).toBe(-5)
+  })
+})
+
+describe('barPlan', () => {
+  it('prints nothing for a day with no open work', () => {
+    expect(barPlan([])).toBeNull()
+  })
+
+  it('walks the four widths and never shrinks as the day gets busier', () => {
+    const widths = [1, 2, 3, 4, 5, 12].map((n) => barPlan(Array(n).fill('med') as Priority[])!.width)
+    expect(widths).toEqual([...BAR_WIDTHS, 38, 38]) // the last two days are pinned at the ceiling
+    expect([...widths].sort((a, b) => a - b)).toEqual(widths) // busier is never shorter
+  })
+
+  it('draws at most four segments and folds the fifth task into the dot', () => {
+    expect(barPlan(['high', 'med', 'low'])?.more).toBe(false)
+    expect(barPlan(['high', 'med', 'low', 'low'])?.segs).toHaveLength(BAR_MAX_SEG)
+    const five = barPlan(['high', 'med', 'low', 'low', 'low'])!
+    expect(five.segs).toHaveLength(BAR_MAX_SEG)
+    expect(five.more).toBe(true)
+  })
+
+  it('keeps the segments, seams and dot inside the width it asked for', () => {
+    for (let n = 1; n <= 12; n++) {
+      const p = barPlan(Array(n).fill('med') as Priority[])!
+      const used = p.segs.length * p.segWidth + (p.segs.length - 1) * BAR_GAP + (p.more ? BAR_MORE : 0)
+      expect(used).toBeLessThanOrEqual(p.width + 0.001)
+    }
+  })
+
+  it('never squeezes a segment under the floor where a hue stops being readable', () => {
+    const busiest = barPlan(Array(20).fill('high') as Priority[])!
+    expect(busiest.segWidth).toBeGreaterThanOrEqual(BAR_MIN_SEG)
   })
 })

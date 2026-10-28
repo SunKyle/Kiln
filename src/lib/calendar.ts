@@ -1,4 +1,4 @@
-import type { Task } from '@/types'
+import type { Priority, Task } from '@/types'
 import { dayKey } from './stats'
 import { sortByPriority } from './tasks'
 
@@ -140,4 +140,48 @@ export function dayGap(from: string, to: string): number {
   const a = Date.parse(`${from}T00:00:00`)
   const b = Date.parse(`${to}T00:00:00`)
   return Math.round((b - a) / 86_400_000)
+}
+
+/**
+ * The month bar, in px. Four widths only: the cell is ~119px wide and 52px tall, so load reads
+ * along the horizontal axis, and a fifth step would be a difference nobody can eyeball.
+ */
+export const BAR_WIDTHS = [14, 22, 30, 38] as const
+/** A segment narrower than this stops carrying its hue, so it stops being information. */
+export const BAR_MIN_SEG = 6
+/** The white seam between segments — it is what keeps two adjacent hues from blending. */
+export const BAR_GAP = 1.5
+/** The "there is more" dot, plus its seam. */
+export const BAR_MORE = 5.5
+/** At most four segments print; the fifth open task and beyond collapse into the dot. */
+export const BAR_MAX_SEG = 4
+
+export interface BarPlan {
+  /** Total width to draw, dot included. */
+  width: number
+  /** The priorities that earn a segment, already in print order (high → low). */
+  segs: Priority[]
+  /** Every segment gets this width; the remainder is seams and the dot. */
+  segWidth: number
+  /** True when open work fell off the end of the bar. */
+  more: boolean
+}
+
+/**
+ * Plan one day's bar from its open priorities. `null` means no bar at all — a finished task must
+ * not make a day look busy, and an empty day must print nothing.
+ *
+ * Overdue is deliberately absent here: the view paints a late day's bar in one red sweep, so the
+ * segment mix stops mattering and the seams are best closed up in CSS.
+ */
+export function barPlan(open: Priority[]): BarPlan | null {
+  if (!open.length) return null
+  const width = BAR_WIDTHS[Math.min(open.length, BAR_WIDTHS.length) - 1]
+  const segs = open.slice(0, BAR_MAX_SEG)
+  const more = open.length > BAR_MAX_SEG
+  const segWidth = Math.max(
+    BAR_MIN_SEG,
+    (width - (segs.length - 1) * BAR_GAP - (more ? BAR_MORE : 0)) / segs.length,
+  )
+  return { width, segs, segWidth, more }
 }

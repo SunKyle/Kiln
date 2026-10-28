@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTasks } from '@/composables/useTasks'
 import { searchTasks, sortByPriority } from '@/lib/tasks'
 import { dayKey } from '@/lib/stats'
 import {
   addDays,
+  barPlan,
   byDue,
   dayGap,
   isOverdue,
@@ -28,8 +29,8 @@ const today = dayKey(now.getTime())
 
 const PRIO: Record<Priority, string> = { high: '高', med: '中', low: '低' }
 const WD = ['一', '二', '三', '四', '五', '六', '日']
-const ORDER: Priority[] = ['high', 'med', 'low']
-/** A day never prints more than this many marks — the rest collapse into +N or a tail bar. */
+/** Week density prints at most this many titles in a cell; the rest collapse into +N. The month
+ * bar has its own cap, which lives with its geometry in lib/calendar. */
 const CAP = 3
 
 type Mode = 'week' | 'month'
@@ -52,7 +53,8 @@ const draft = ref('')
 const prio = ref<Priority>('med')
 const dueInput = ref(linked)
 const scope = ref<Scope>('day')
-const onlyDone = ref(false)
+/** The rail has two shapes: read the day, or write a new task into it. Only one is on screen. */
+const composing = ref(false)
 
 const ym = computed(() => monthAnchor(view.value))
 const cells = computed(() =>
@@ -112,21 +114,44 @@ function backToToday() {
   pickDay(today)
 }
 
-function submit() {
-  add(draft.value, prio.value, dueInput.value || undefined)
+const titleEl = ref<HTMLInputElement | null>(null)
+function startCompose() {
+  composing.value = true
+  // the input only exists after the branch swaps in, so focus waits for the next tick
+  nextTick(() => titleEl.value?.focus())
+}
+function cancelCompose() {
+  composing.value = false
   draft.value = ''
+}
+
+function submit() {
+  const title = draft.value.trim()
+  if (!title) return // an empty submit must not look like it worked
+  add(title, prio.value, dueInput.value || today)
+  draft.value = ''
+  composing.value = false // back to the list, where the row you just wrote now sits
+}
+
+/** The date field never stays empty: clearing it re-arms today, because a task without a day
+ * does not exist any more (useTasks enforces the same rule at the write path). */
+function firmDue() {
+  if (!dueInput.value) dueInput.value = today
 }
 
 function openOn(key: string): Task[] {
   return (marks.value.get(key) ?? []).filter((t) => !t.done)
 }
-/** Month density marks open work only — a finished task must not make a day look busy. */
-function dotsFor(key: string): Task[] {
-  return openOn(key).slice(0, CAP)
-}
-function tailFor(key: string): boolean {
-  return openOn(key).length > CAP
-}
+
+/**
+ * One pass for the whole grid: every cell arrives with the bar it should print, so the template
+ * never plans twice. Month density marks open work only — a finished task must not make a day
+ * look busy — and `byDue` already filed each day high → low, which is the print order.
+ */
+const grid = computed(() =>
+  cells.value.map((c) => ({ ...c, bar: barPlan(openOn(c.key).map((t) => t.priority)) })),
+)
+
 /** Week density has room for titles, so completed work rides along (struck through). */
 function pillsFor(key: string): Task[] {
   return (marks.value.get(key) ?? []).slice(0, CAP)
@@ -145,6 +170,13 @@ function pillCls(t: Task) {
   }
 }
 
+/** A legend key wears the shape the density it explains actually draws: a bar segment in the
+ * month, a dot beside the title in the week. Same hue, two letters. */
+function keyCls(p: Priority) {
+  return mode.value === 'month' ? `kb k-${p}` : `d d-${p}`
+}
+const lateCls = computed(() => (mode.value === 'month' ? 'kb k-late' : 'd d-late'))
+
 function cellCls(c: { key: string; inMonth: boolean; weekday: number }) {
   return {
     out: !c.inMonth,
@@ -155,7 +187,7 @@ function cellCls(c: { key: string; inMonth: boolean; weekday: number }) {
   }
 }
 
-/** Up to three marks per cell, so a 52px row never overflows. */
+/** The cell's accessible name: which day, and how much is owed on it. */
 function cellLabel(c: { key: string }): string {
   const n = openOn(c.key).length
   return `${dayLabel(c.key)}，${n} 项待办`
@@ -171,7 +203,7 @@ const list = computed<Task[]>(() => {
   if (scope.value === 'day') return order(tasksOn(tasks.value, sel.value))
   if (scope.value === 'overdue') return order(overdue.value)
   if (scope.value === 'unscheduled') return order(loose.value)
-  return order(onlyDone.value ? tasks.value.filter((t) => t.done) : tasks.value.filter((t) => !t.done))
+  return order(tasks.value) // every row, done included — order() sinks the finished ones
 })
 
 function dayLabel(key: string): string {
@@ -207,30 +239,26 @@ const paneTitle = computed(() => {
   return dayLabel(sel.value)
 })
 
-/** "3 项 · 高 1 中 1 低 1 · 另有 2 项逾期" — the tally of what is still open, plus what is finished. */
-const paneSub = computed(() => {
-  const rows = list.value
-  if (!rows.length) return '0 项'
-  const open = rows.filter((t) => !t.done)
-  const bits = [`${rows.length} 项`]
-  if (open.length) {
-    bits.push(
-      ORDER.map((p) => `${PRIO[p]} ${open.filter((t) => t.priority === p).length}`)
-        .filter((s) => !s.endsWith(' 0'))
-        .join(' '),
-    )
-  }
-  const done = rows.length - open.length
-  if (done) bits.push(`已完成 ${done}`)
-  if (scope.value === 'day' && overdue.value.length) bits.push(`另有 ${overdue.value.length} 项逾期`)
-  return bits.join(' · ')
+/** One pair of counters drives the whole summary card: the figure, the ring and the label
+ * cannot drift apart, because the arc is drawn from the same rounded percentage you read. */
+const doneCount = computed(() => list.value.filter((t) => t.done).length)
+const pct = computed(() => {
+  const total = list.value.length
+  return total ? Math.round((doneCount.value / total) * 100) : 0
 })
+const RING_R = 25
+const RING_C = 2 * Math.PI * RING_R
+const ringGap = computed(() => Number((RING_C * (1 - pct.value / 100)).toFixed(2)))
+
+/** The day you always walk into next — whatever follows the day being read. */
+const nextKey = computed(() => addDays(sel.value, 1))
+const nextOpen = computed(() => openOn(nextKey.value).length)
 
 const emptyText = computed(() => {
-  if (scope.value === 'overdue') return '没有逾期任务——日历上的红点会跟着这里一起清掉。'
-  if (scope.value === 'unscheduled') return '进行中的任务都排上了日期。'
-  if (scope.value === 'all') return onlyDone.value ? '还没有完成过任务。' : '这里还空着，先添加一项待办。'
-  return `${dayLabel(sel.value)} 没有安排。在上面写一项，回车就落到这一天。`
+  if (scope.value === 'overdue') return '没有逾期任务——日历上那几根红条会跟着这里一起清掉。'
+  if (scope.value === 'unscheduled') return '没有漏掉日期的任务——每一项都排在某一天上。'
+  if (scope.value === 'all') return '任务库还是空的。'
+  return '这一天还空着。点「新建任务」，写一项就落到这一天。'
 })
 
 /** Right-hand stamp on each row: how late, how soon, or never scheduled. */
@@ -255,72 +283,79 @@ function tagCls(t: Task) {
     <!-- ===== the month (or the week) at a glance — the primary view ===== -->
     <section class="card cal" :class="{ monthly: mode === 'month' }">
       <div class="cal-head">
-        <div class="cal-nav">
-          <button class="arrow" :aria-label="mode === 'week' ? '上一周' : '上一月'" @click="shift(-1)">‹</button>
+        <!-- read: plain ink. act: outlines. They share a row but never a skin. -->
+        <div class="cal-read">
           <h2 class="cal-title">{{ rangeLabel }}<span class="yr">{{ rangeYear }}</span></h2>
-          <button class="arrow" :aria-label="mode === 'week' ? '下一周' : '下一月'" @click="shift(1)">›</button>
+          <p class="cal-stat">
+            {{ mode === 'month' ? '本月' : '本周' }} <b>{{ mode === 'month' ? monthDated : weekDated }}</b> 项有日期
+          </p>
         </div>
-
-        <div class="cal-tools">
-          <span v-if="mode === 'month'" class="chip count">
-            本月 <span class="cnt">{{ monthDated }}</span> 项有日期
-          </span>
-          <span v-else-if="!weekDated" class="chip rd">本周 0 项有日期</span>
+        <div class="cal-ops">
+          <div class="pager" role="group" :aria-label="mode === 'week' ? '按周翻页' : '按月翻页'">
+            <button class="arrow" :aria-label="mode === 'week' ? '上一周' : '上一月'" @click="shift(-1)">‹</button>
+            <button class="arrow" :aria-label="mode === 'week' ? '下一周' : '下一月'" @click="shift(1)">›</button>
+          </div>
           <div class="seg" role="group" aria-label="日历密度">
             <button class="seg-btn" :class="{ on: mode === 'week' }" @click="setMode('week')">周</button>
             <button class="seg-btn" :class="{ on: mode === 'month' }" @click="setMode('month')">月</button>
           </div>
-          <button class="chip z" @click="backToToday">回到今天</button>
+          <button class="chip" @click="backToToday">回到今天</button>
+        </div>
+      </div>
+
+      <div class="cal-grid">
+        <div class="dow">
+          <span v-for="(w, i) in WD" :key="w" :class="{ we: i >= 5 }">{{ w }}</span>
+        </div>
+
+        <div class="cells" :class="mode === 'week' ? 'w' : 'm'">
           <button
-            v-if="overdue.length"
-            class="chip rd"
-            :class="{ on: scope === 'overdue' && !q }"
-            @click="scope = 'overdue'"
+            v-for="c in grid"
+            :key="c.key"
+            class="cell"
+            :class="cellCls(c)"
+            :aria-label="cellLabel(c)"
+            :aria-current="c.key === sel ? 'date' : undefined"
+            @click="pickDay(c.key)"
           >
-            逾期 <span class="cnt">{{ overdue.length }}</span>
+            <span class="num">{{ c.day }}</span>
+
+            <span v-if="mode === 'week'" class="pills">
+              <span v-for="t in pillsFor(c.key)" :key="t.id" class="pill" :class="pillCls(t)">
+                <span v-if="!(t.priority === 'high' && !t.done && !isLate(t))" class="d" :class="'d-' + t.priority" />
+                <span class="pt">{{ t.title }}</span>
+              </span>
+              <span v-if="moreFor(c.key) > 0" class="more-p">+{{ moreFor(c.key) }}</span>
+            </span>
+
+            <span v-else-if="c.bar" class="bar" :style="{ width: c.bar.width + 'px' }">
+              <i
+                v-for="(p, i) in c.bar.segs"
+                :key="i"
+                class="seg"
+                :class="'s-' + p"
+                :style="{ width: c.bar.segWidth + 'px' }"
+              />
+              <i v-if="c.bar.more" class="more" />
+            </span>
           </button>
         </div>
       </div>
 
-      <div class="dow">
-        <span v-for="(w, i) in WD" :key="w" :class="{ we: i >= 5 }">{{ w }}</span>
-      </div>
-
-      <div class="cells" :class="mode === 'week' ? 'w' : 'm'">
-        <button
-          v-for="c in cells"
-          :key="c.key"
-          class="cell"
-          :class="cellCls(c)"
-          :aria-label="cellLabel(c)"
-          @click="pickDay(c.key)"
-        >
-          <span class="num">{{ c.day }}</span>
-
-          <span v-if="mode === 'week'" class="pills">
-            <span v-for="t in pillsFor(c.key)" :key="t.id" class="pill" :class="pillCls(t)">
-              <span v-if="!(t.priority === 'high' && !t.done && !isLate(t))" class="d" :class="'d-' + t.priority" />
-              <span class="pt">{{ t.title }}</span>
-            </span>
-            <span v-if="moreFor(c.key) > 0" class="more-p">+{{ moreFor(c.key) }}</span>
-          </span>
-
-          <span v-else class="dots">
-            <i v-for="t in dotsFor(c.key)" :key="t.id" class="d" :class="'d-' + t.priority" />
-            <i v-if="tailFor(c.key)" class="d tail" />
-          </span>
-
-          <i class="seline" />
-        </button>
-      </div>
-
       <div class="legend">
-        <span class="lg"><i class="d d-high" />高</span>
-        <span class="lg"><i class="d d-med" />中</span>
-        <span class="lg"><i class="d d-low" />低</span>
-        <span v-if="mode === 'month'" class="lg">只标记未完成 · 4 项以上收成短横</span>
-        <span v-else class="lg">格内最多 3 条 · 其余收成 +N</span>
-        <span class="lg lg-late">红＝逾期</span>
+        <span class="keys">
+          <span class="lg"><i :class="keyCls('high')" />高</span>
+          <span class="lg"><i :class="keyCls('med')" />中</span>
+          <span class="lg"><i :class="keyCls('low')" />低</span>
+          <span class="lg lg-late"><i :class="lateCls" />逾期</span>
+        </span>
+        <span class="rule">
+          {{
+            mode === 'month'
+              ? '只算未完成 · 条越长＝项越多，第 5 项起收成圆点 · 实心盘＝在看这天，描边圈＝今天'
+              : `每格最多 ${CAP} 条，其余收成 +N · 实心盘＝在看这天，描边圈＝今天`
+          }}
+        </span>
       </div>
 
       <p v-if="!scheduledCount && loose.length" class="nudge">
@@ -331,60 +366,129 @@ function tagCls(t: Task) {
     <!-- ===== the day, opened ===== -->
     <aside class="card focus">
       <div class="f-head">
-        <div>
-          <h2>{{ paneTitle }}</h2>
-          <p class="f-sub">{{ paneSub }}</p>
-        </div>
-        <button v-if="!q" class="f-more" @click="scope = scope === 'unscheduled' ? 'day' : 'unscheduled'">
-          {{ scope === 'unscheduled' ? '回到当日 ←' : `未排期 ${loose.length} 项 →` }}
-        </button>
+        <h2>{{ composing ? '新建待办' : paneTitle }}</h2>
+        <button v-if="composing" class="chip" @click="cancelCompose">取消</button>
       </div>
 
-      <div v-if="!q" class="scopes">
-        <button class="chip" :class="{ on: scope === 'day' }" @click="pickDay(sel)">当日</button>
-        <button v-if="overdue.length" class="chip" :class="{ on: scope === 'overdue' }" @click="scope = 'overdue'">
-          逾期 {{ overdue.length }}
-        </button>
-        <button class="chip" :class="{ on: scope === 'all' }" @click="scope = 'all'">全部 {{ tasks.length }}</button>
-        <button v-if="scope === 'all'" class="chip quiet" @click="onlyDone = !onlyDone">
-          {{ onlyDone ? '看进行中' : '看已完成' }}
-        </button>
-      </div>
-      <button v-else class="chip on clear-q" @click="clearQuery">清除搜索「{{ q }}」×</button>
+      <!-- ===== browse: switch it, read it, then the day after ===== -->
+      <template v-if="!composing">
+        <button class="btn btn-plum f-new" @click="startCompose">＋ 新建任务</button>
 
-      <form class="add-form" @submit.prevent="submit">
-        <div class="add">
-          <button class="plus" type="submit" aria-label="添加待办">＋</button>
-          <input v-model="draft" :placeholder="dueInput ? '添加待办，回车落到所选日' : '添加待办（不排期）'" />
-        </div>
+        <section class="prog">
+          <div class="p-top">
+            <p class="p-num">{{ pct }}<span class="p-unit">%</span></p>
+            <svg
+              class="p-ring"
+              viewBox="0 0 56 56"
+              role="img"
+              :aria-label="`已完成 ${doneCount} / ${list.length}`"
+            >
+              <circle class="track" cx="28" cy="28" :r="RING_R" />
+              <circle
+                v-if="pct"
+                class="bar"
+                cx="28"
+                cy="28"
+                :r="RING_R"
+                :stroke-dasharray="RING_C"
+                :stroke-dashoffset="ringGap"
+              />
+            </svg>
+          </div>
+          <p class="p-sub">{{ list.length ? `已完成 ${doneCount} / ${list.length}` : '这个范围里还没有任务' }}</p>
+
+          <!-- the scope switcher lives with the thing it switches, so the counts are said once -->
+          <div class="p-tabs" role="group" aria-label="查看范围">
+            <template v-if="q">
+              <span class="p-tab on">搜索「{{ q }}」</span>
+              <button class="p-tab" @click="clearQuery">清除 ×</button>
+            </template>
+            <template v-else>
+              <button class="p-tab" :class="{ on: scope === 'day' }" @click="pickDay(sel)">当日</button>
+              <button
+                v-if="overdue.length"
+                class="p-tab late"
+                :class="{ on: scope === 'overdue' }"
+                @click="scope = 'overdue'"
+              >
+                逾期 {{ overdue.length }}
+              </button>
+              <button
+                v-if="loose.length"
+                class="p-tab"
+                :class="{ on: scope === 'unscheduled' }"
+                @click="scope = 'unscheduled'"
+              >
+                未排期 {{ loose.length }}
+              </button>
+              <button class="p-tab" :class="{ on: scope === 'all' }" @click="scope = 'all'">
+                全部 {{ tasks.length }}
+              </button>
+            </template>
+          </div>
+        </section>
+
+        <ul v-if="list.length" class="f-list">
+          <li v-for="t in list" :key="t.id" class="ti" :class="{ done: t.done, late: isLate(t) }">
+            <input
+              type="checkbox"
+              class="box"
+              :checked="t.done"
+              :aria-label="`完成 ${t.title}`"
+              @change="toggle(t.id)"
+            />
+            <span class="tt">{{ t.title }}</span>
+            <span class="tail">
+              <span v-if="scope !== 'day' || t.due !== sel" class="tag" :class="tagCls(t)">{{ whenLabel(t) }}</span>
+              <span class="pri">{{ PRIO[t.priority] }}</span>
+              <button class="del" :aria-label="`删除 ${t.title}`" title="删除" @click="remove(t.id)">×</button>
+            </span>
+          </li>
+        </ul>
+        <p v-else-if="q" class="emptyhint">没有匹配「<b>{{ q }}</b>」的任务。</p>
+        <p v-else class="emptyhint">{{ emptyText }}</p>
+
+        <button v-if="!q" class="peek" @click="pickDay(nextKey)">
+          <svg class="pk-ico" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="5" width="18" height="16" rx="2.5" />
+            <path d="M8 3v4M16 3v4M3 10h18" />
+          </svg>
+          <span class="pk-main">
+            <b>{{ dayLabel(nextKey) }}</b>
+            <span>{{ nextOpen ? `${nextOpen} 个任务安排` : '暂无安排' }}</span>
+          </span>
+          <span class="pk-go">→</span>
+        </button>
+      </template>
+
+      <!-- ===== compose: the card becomes the form, nothing else is on screen ===== -->
+      <form v-else class="compose" @submit.prevent="submit">
+        <input
+          ref="titleEl"
+          v-model="draft"
+          class="field cmp-title"
+          placeholder="要做什么？"
+          aria-label="待办内容"
+          @keydown.esc="cancelCompose"
+        />
         <div class="opts">
           <select v-model="prio" class="field prio" aria-label="优先级" title="优先级">
             <option value="high">高优先级</option>
             <option value="med">中优先级</option>
             <option value="low">低优先级</option>
           </select>
-          <input v-model="dueInput" type="date" class="field due" title="到期日；清空＝不排期" aria-label="到期日" />
+          <input
+            v-model="dueInput"
+            type="date"
+            class="field due"
+            title="到期日；清空＝今天"
+            aria-label="到期日"
+            @change="firmDue"
+          />
         </div>
+        <p class="cmp-lands">将落在 {{ dayLabel(dueInput || today) }}</p>
+        <button class="btn btn-plum f-new" type="submit">添加</button>
       </form>
-
-      <ul v-if="list.length" class="f-list">
-        <li v-for="t in list" :key="t.id" class="ti" :class="{ done: t.done, late: isLate(t) }">
-          <input type="checkbox" class="box" :checked="t.done" :aria-label="`完成 ${t.title}`" @change="toggle(t.id)" />
-          <span class="tt">{{ t.title }}</span>
-          <span class="tail">
-            <span v-if="scope !== 'day' || t.due !== sel" class="tag" :class="tagCls(t)">{{ whenLabel(t) }}</span>
-            <span class="pri">{{ PRIO[t.priority] }}</span>
-            <button class="del" :aria-label="`删除 ${t.title}`" @click="remove(t.id)">删除</button>
-          </span>
-        </li>
-      </ul>
-      <p v-else-if="q" class="emptyhint">没有匹配「<b>{{ q }}</b>」的任务。</p>
-      <p v-else class="emptyhint">{{ emptyText }}</p>
-
-      <div class="f-foot">
-        <span>点日历上的日期换一天</span>
-        <span>清空日期＝不排期</span>
-      </div>
     </aside>
   </div>
 </template>
