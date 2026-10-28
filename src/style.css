@@ -4,6 +4,10 @@
   /* palette */
   --bg-top:#E1442F; --bg-mid:#EA5B3E; --bg-warm:#F2794E; --bg-bot:#F8B183;
   --white:#FFFFFF;
+  /* The brand gradient no longer floods the whole page — it lives on the rail now, and the
+     workspace sits on paper instead of on a poster. The canvas stays a neutral grey on purpose:
+     warm it one notch and it turns to cream, which the white cards then lose to. */
+  --page:#ECEAE8; --rail-grad:linear-gradient(172deg,var(--bg-top) 0%,var(--bg-mid) 100%);
   --plum:#4B2531; --plum-2:#5C2E3D;
   --orange:#F09A55; --gold:#C79A5B; --sage:#6E8158;
   --ink:var(--text); --ink-soft:var(--text-3);
@@ -71,8 +75,7 @@ html,body,#app{height:100%}
 body{
   font-family:var(--font-body);
   color:var(--text);
-  background:linear-gradient(158deg,var(--bg-top) 0%,var(--bg-mid) 30%,var(--bg-warm) 62%,var(--bg-bot) 100%);
-  background-attachment:fixed;
+  background:var(--page);
   -webkit-font-smoothing:antialiased;
 }
 
@@ -102,7 +105,12 @@ a{color:inherit}
 .shell-fit .side{grid-area:side;align-self:stretch;position:static}
 
 /* ---------- rail ---------- */
-.rail{position:sticky;top:var(--pad);height:calc(100vh - var(--pad)*2);display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 0}
+/* The brand surface, at last its own card. Every white mark in here (logo, icon strokes, avatar
+   rim) used to float on the page gradient, whose lower half reached #F8B183 — white on that is
+   1.81:1, invisible. The ramp stops at --bg-mid on purpose: white strokes measure 4.14:1 on
+   --bg-top and 3.46:1 here, but only 2.76:1 on --bg-warm, under the floor for a graphic. */
+.rail{position:sticky;top:var(--pad);height:calc(100vh - var(--pad)*2);display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 0;
+  background:var(--rail-grad);border-radius:var(--r-panel);box-shadow:var(--shadow)}
 .rail .logo{width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.14);color:#fff;
   border:1px solid rgba(255,255,255,.34);display:grid;place-items:center;font-family:var(--font-display);font-weight:700;font-size:17px;margin-bottom:24px;text-decoration:none}
 .rail .nav{display:flex;flex-direction:column;gap:15px;margin-top:6px}
@@ -118,8 +126,10 @@ a{color:inherit}
 /* ---------- main ---------- */
 .main{display:flex;flex-direction:column;gap:16px;min-width:0}
 .topbar{display:flex;align-items:baseline;justify-content:flex-start;gap:28px;padding:0;flex-wrap:wrap}
-.topbar .title{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;font-family:var(--font-display);font-size:38px;font-weight:700;color:#fff;line-height:1}
-.topbar .title .when{font-family:var(--font-body);font-size:24px;font-weight:500;letter-spacing:0;color:var(--on-brand-2)}
+/* white here was a page-background assumption, not a style: on the grey canvas the headline goes
+   to plum ink, and the date line to secondary ink — the weight gap does the ranking now */
+.topbar .title{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;font-family:var(--font-display);font-size:38px;font-weight:700;color:var(--plum);line-height:1}
+.topbar .title .when{font-family:var(--font-body);font-size:24px;font-weight:500;letter-spacing:0;color:var(--text-2)}
 .tb-actions{display:flex;align-items:center;gap:12px}
 
 /* ---------- cards ---------- */
